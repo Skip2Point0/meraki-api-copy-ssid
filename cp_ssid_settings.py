@@ -102,10 +102,10 @@ def pull_destination_networks():
         return dest_network_ids
 
 
-def pull_ssid_ids(head):
+def pull_ssid_ids(head, netsource):
     global ssids, ssid_dictionary
     ssid_id = []
-    url = "https://api.meraki.com/api/v0//networks/L_607422999741601685/ssids"
+    url = "https://api.meraki.com/api/v0/networks/" + netsource + "/ssids"
     payload = {}
     response = requests.request("GET", url, headers=head, data=payload)
     response = response.content
@@ -144,7 +144,7 @@ def get_name_from_id(dictionary, net_id):
 pull_organization_networks(headers)
 networkss_src = pull_source_network()
 networks_dest = pull_destination_networks()
-ssid_param = pull_ssid_ids(headers)
+ssid_param = pull_ssid_ids(headers, networkss_src)
 
 
 def copy_ssids(net_sr, net_ds, ssid, head, sr_name):
