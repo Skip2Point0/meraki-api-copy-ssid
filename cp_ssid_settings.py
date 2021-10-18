@@ -1,7 +1,7 @@
 import requests
 import json
 # ############################################     PARAMETERS    #######################################################
-# Fill in variables below. Meraki API, Org. Name, SSID Names to be copied, Source Network Name, Destination Network Names
+#Fill in variables below. Meraki API, Org. Name, SSID Names to be copied, Source Network Name, Destination Network Names
 # ######################################################################################################################
 meraki_api = 'MerakiAPIkey'
 organization_id = 'Organization Name'
@@ -10,6 +10,7 @@ source_network_name = 'Source Network Name'
 destination_network_name = ['Destination Network Name1', 'Destination Network Name2']
 # ######################################################################################################################
 net_dictionary = {}
+shard_url = ()
 ssid_dictionary = {}
 headers = {
     'X-Cisco-Meraki-API-Key': meraki_api,
@@ -19,6 +20,7 @@ headers = {
 
 
 def pull_organization_id(head):
+    global shard_url
     url = "https://api.meraki.com/api/v0/organizations"
     payload = {}
     response = requests.request("GET", url, headers=head, data=payload)
@@ -28,8 +30,12 @@ def pull_organization_id(head):
         name = dicti["name"]
         if name == organization_id:
             org_id = dicti["id"]
+            shard_url = dicti["url"]
+            urllenght = shard_url.find('com') + 3
+            shard_url = shard_url[:urllenght]
             print("#################################################")
             print(name + "\n" + "Organization ID: " + org_id)
+            print("Organization Shard URL: " + shard_url)
             print("#################################################")
             return org_id
         else:
@@ -39,7 +45,7 @@ def pull_organization_id(head):
 def pull_organization_networks(head):
     global organization_id, net_dictionary
     organization_id = pull_organization_id(head)
-    url = "https://api.meraki.com/api/v0/organizations/" + organization_id + "/networks"
+    url = shard_url + "/api/v0/organizations/" + organization_id + "/networks"
     payload = {}
     response = requests.request("GET", url, headers=head, data=payload)
     response = response.content
@@ -105,7 +111,7 @@ def pull_destination_networks():
 def pull_ssid_ids(head, netsource):
     global ssids, ssid_dictionary
     ssid_id = []
-    url = "https://api.meraki.com/api/v0/networks/" + netsource + "/ssids"
+    url = shard_url + "/api/v0/networks/" + netsource + "/ssids"
     payload = {}
     response = requests.request("GET", url, headers=head, data=payload)
     response = response.content
@@ -154,7 +160,7 @@ def copy_ssids(net_sr, net_ds, ssid, head, sr_name):
             print("#####################################################################################")
             print("Pulling SSID " + ssid_name + " - ID:" + str(ssid_rollout) + " information from network " +
                   sr_name + " : " + net_sr)
-            url = ("https://api.meraki.com/api/v0/networks/" + net_sr + "/ssids/" + ssid_rollout)
+            url = shard_url + "/api/v1/networks/" + net_sr + "/wireless/ssids/" + ssid_rollout
             print(url)
             payload = {}
             response = requests.request("GET", url, headers=head, data=payload)
@@ -165,7 +171,7 @@ def copy_ssids(net_sr, net_ds, ssid, head, sr_name):
             print("#####################################################################################")
             print("Applying SSID " + ssid_name + " - ID:" + str(ssid_rollout) + " settings to network " + net_name +
                   " : " + network_dest)
-            url = ("https://api.meraki.com/api/v0/networks/" + network_dest + "/ssids/" + ssid_rollout)
+            url = shard_url + "/api/v1/networks/" + network_dest + "/wireless/ssids/" + ssid_rollout
             print(url)
             response = requests.request("PUT", url, headers=head, data=ssid_json)
             print(response.text.encode('utf8'))
@@ -178,44 +184,73 @@ def copy_splash_settings(net_sr, net_ds, ssid, head, sr_name):
             print("#####################################################################################")
             print("Pulling Splash Page settings from SSID " + ssid_name + " - ID:" + str(ssid_rollout) +
                   " network " + sr_name + " : " + net_sr)
-            url = ("https://api.meraki.com/api/v0/networks/" + net_sr + "/ssids/" + ssid_rollout + "/splashSettings")
+            url = shard_url + "/v0/networks/" + net_sr + "/ssids/" + ssid_rollout + "/splash/settings"
             print(url)
             payload = {}
             response = requests.request("GET", url, headers=head, data=payload)
             print(response.text.encode('utf8'))
             ssid_json = response.content
+            ssid_json = ssid_json.decode()
+            ssid_json = json.loads(ssid_json)
+            if ssid_json['splashUrl'] == '':
+                ssid_json.pop('splashUrl')
+            ssid_json = json.dumps(ssid_json)
             net_name = get_name_from_id(net_dictionary, network_dest)
             print("#####################################################################################")
             print("Applying Splash Page settings to SSID " + ssid_name + " - ID:" + str(ssid_rollout) +
                   " to network " + net_name + " : " + network_dest)
-            url = ("https://api.meraki.com/api/v0/networks/" + network_dest + "/ssids/" + ssid_rollout +
-                   "/splashSettings")
+            url = shard_url + " /api/v1/networks/" + network_dest + "/wireless/ssids/" + ssid_rollout + "/splash/settings"
             print(url)
             response = requests.request("PUT", url, headers=head, data=ssid_json)
             print(response.text.encode('utf8'))
 
 
-def copy_firewall_l3(net_sr, net_ds, ssid, head, sr_name):
+def copy_firewall_rules(net_sr, net_ds, ssid, head, sr_name):
     for network_dest in net_ds:
         for ssid_rollout in ssid:
             ssid_name = get_name_from_id(ssid_dictionary, ssid_rollout)
             print("#####################################################################################")
             print("Pulling firewall L3 rules from SSID " + ssid_name + " - ID:" + str(ssid_rollout) +
                   " network " + sr_name + " : " + net_sr)
-            url = ("https://api.meraki.com/api/v0/networks/" + net_sr + "/ssids/" + ssid_rollout + "/l3FirewallRules")
+            url = shard_url + "/api/v1/networks/" + net_sr + "/wireless/ssids/" + ssid_rollout + "/firewall/l3FirewallRules"
             print(url)
             payload = {}
             response = requests.request("GET", url, headers=head, data=payload)
             response = json.loads(response.text)
-            firewall_rules = {"rules": response}
+            firewall_rules = response["rules"]
+            print(firewall_rules)
+            firewall_rules.pop(-1)
+            firewall_rules.pop(-1)
+            firewall_rules = {"rules": firewall_rules}
             firewall_rules = json.dumps(firewall_rules)
             net_name = get_name_from_id(net_dictionary, network_dest)
             print(firewall_rules)
             print("#####################################################################################")
             print("Applying L3 Firewall Rules to SSID " + ssid_name + " - ID:" + str(ssid_rollout) +
                   " to network " + net_name + " : " + network_dest)
-            url = ("https://api.meraki.com/api/v0/networks/" + network_dest + "/ssids/" + ssid_rollout +
-                   "/l3FirewallRules")
+            url = shard_url + "/v1/networks/" + network_dest + "/wireless/ssids/" + ssid_rollout + "/firewall/l3FirewallRules"
+            print(url)
+            response = requests.request("PUT", url, headers=head, data=firewall_rules)
+            print(response.text.encode('utf8'))
+
+            print("#####################################################################################")
+            print("Pulling firewall L7 rules from SSID " + ssid_name + " - ID:" + str(ssid_rollout) +
+                  " network " + sr_name + " : " + net_sr)
+            url = ("https://api.meraki.com/api/v1/networks/" + net_sr + "/wireless/ssids/" + ssid_rollout
+                   + "/firewall/l7FirewallRules")
+            print(url)
+            payload = {}
+            response = requests.request("GET", url, headers=head, data=payload)
+            response = json.loads(response.text)
+            firewall_rules = response["rules"]
+            firewall_rules = {'rules': firewall_rules}
+            firewall_rules = json.dumps(firewall_rules)
+            net_name = get_name_from_id(net_dictionary, network_dest)
+            print(firewall_rules)
+            print("#####################################################################################")
+            print("Applying L7 Firewall Rules to SSID " + ssid_name + " - ID:" + str(ssid_rollout) +
+                  " to network " + net_name + " : " + network_dest)
+            url = shard_url + "/api/v1/networks/" + network_dest + "/wireless/ssids/" + ssid_rollout + "/firewall/l7FirewallRules"
             print(url)
             response = requests.request("PUT", url, headers=head, data=firewall_rules)
             print(response.text.encode('utf8'))
@@ -228,7 +263,7 @@ def copy_traffic_shaping(net_sr, net_ds, ssid, head, sr_name):
             print("#####################################################################################")
             print("Pulling Traffic Shaping information from SSID " + ssid_name + " - ID:" + str(ssid_rollout) +
                   " network " + sr_name + " : " + net_sr)
-            url = ("https://api.meraki.com/api/v0/networks/" + net_sr + "/ssids/" + ssid_rollout + "/trafficShaping")
+            url = shard_url + "/api/v1/networks/" + net_sr + "/wireless/ssids/" + ssid_rollout + "/trafficShaping/rules"
             print(url)
             payload = {}
             response = requests.request("GET", url, headers=head, data=payload)
@@ -238,8 +273,7 @@ def copy_traffic_shaping(net_sr, net_ds, ssid, head, sr_name):
             print("#####################################################################################")
             print("Applying Traffic Shaping settings from SSID " + ssid_name + " - ID:" + str(ssid_rollout) +
                   " to network " + net_name + " : " + network_dest)
-            url = ("https://api.meraki.com/api/v0/networks/" + network_dest + "/ssids/" + ssid_rollout +
-                   "/trafficShaping")
+            url = shard_url + "/api/v1/networks/" + network_dest + "/wireless/ssids/" + ssid_rollout + "/trafficShaping/rules"
             print(url)
             response = requests.request("PUT", url, headers=head, data=traffic_shaping)
             print(response.text.encode('utf8'))
@@ -247,5 +281,5 @@ def copy_traffic_shaping(net_sr, net_ds, ssid, head, sr_name):
 
 copy_ssids(networkss_src, networks_dest, ssid_param, headers, source_network_name)
 copy_splash_settings(networkss_src, networks_dest, ssid_param, headers, source_network_name)
-copy_firewall_l3(networkss_src, networks_dest, ssid_param, headers, source_network_name)
+copy_firewall_rules(networkss_src, networks_dest, ssid_param, headers, source_network_name)
 copy_traffic_shaping(networkss_src, networks_dest, ssid_param, headers, source_network_name)
